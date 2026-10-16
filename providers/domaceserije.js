@@ -40,7 +40,7 @@ var _settings = (function () {
 // 'online' (čistiji front-end, deterministički slugovi) ili 'net'
 var SITE_KEY = _settings.site || _settings.SITE || 'online';
 
-var MAX_RESULTS = Number(_settings.maxResults) || 10;
+var MAX_RESULTS = Number(_settings.maxResults) || 25;
 // Nerešivi serveri se ne prikazuju: Nuvio plugin ne može da otvori spoljašnji
 // link (vidi komentar u getStreams). Uključi samo ako ti treba spisak hostova.
 var INCLUDE_UNRESOLVED = _settings.includeUnresolved === true;
@@ -51,8 +51,9 @@ var SHOW_STREAMTAPE = _settings.showStreamtape !== false;
 var BUDGET_MS = Number(_settings.budgetMs) || 45000;
 // Najveća byse PoW težina (bita) koja se uopšte pokušava
 var BYSE_MAX_DIFFICULTY = Number(_settings.byseMaxDifficulty) || 18;
-// Koliko uspešnih byse kopija tražiti (svaka je jedan PoW)
-var BYSE_MAX_OK = Number(_settings.byseMaxOk) || 1;
+// Koliko uspešnih byse kopija tražiti (svaka je jedan PoW; rok BUDGET_MS i
+// dalje štiti od limita od 60 s). Podrazumevano sve — svaka kopija sa svog sajta.
+var BYSE_MAX_OK = Number(_settings.byseMaxOk) || 99;
 // Hostovi za koje znamo da se ne mogu rešiti — ne otvaraju se uopšte
 // (rpmhub: "Video not found", abyss: service-worker chunk protokol, filmoland: NXDOMAIN)
 var DEAD_HOSTS = { 'ds.rpmhub.site': 1, 'player.abyssplayer.com': 1, 'player.filmoland.com': 1 };
@@ -2091,9 +2092,12 @@ function buildStream(r, meta, season, episode, siteLabel) {
       ? ' S' + pad2(season) + 'E' + pad2(episode)
       : '';
 
+  // isti plejer može doći sa više sajtova (različiti upload-i) — sajt u imenu
+  // razlikuje kopije
+  var from = siteLabel ? ' · ' + siteLabel : '';
   var stream = {
-    title: meta.displayTitle + epTag + ' — ' + r.server + (quality ? ' (' + quality + ')' : ''),
-    name: r.server,
+    title: meta.displayTitle + epTag + ' — ' + r.server + (quality ? ' (' + quality + ')' : '') + from,
+    name: r.server + from,
     url: r.url,
     quality: quality,
     size: '',
@@ -2259,8 +2263,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
   var done = {};
   var cheapDone = await Promise.all(cheap.map(settle));
   for (var cd = 0; cd < cheapDone.length; cd++) done[cheapDone[cd].server.url] = cheapDone[cd];
-  // Druga byse kopija iste epizode je samo rezerva, a košta još jedan PoW
-  // (na uređaju sekunde do desetine sekundi) — staje se posle prve uspešne.
+  // Svaka byse kopija je jedan PoW (na uređaju sekunde); rešavaju se redom do
+  // BYSE_MAX_OK uspešnih ili do roka, šta pre dođe.
   _byseDeadline = started + BUDGET_MS;
   var byseOk = 0;
   for (var b = 0; b < byse.length && byseOk < BYSE_MAX_OK; b++) {

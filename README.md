@@ -236,7 +236,10 @@ Provereno u `NuvioTV/app/src/full/.../PluginRuntime.kt`:
     - byse PoW se prekida posle `BUDGET_MS` (45 s od početka `getStreams`) —
       bez toga ceo plugin probije limit od 60 s i Nuvio ne prikaže **ništa**;
     - težina iznad `BYSE_MAX_DIFFICULTY` (18) se ne pokušava uopšte;
-    - posle prve uspešne byse kopije ostale se preskaču (`BYSE_MAX_OK` = 1);
+    - byse kopije se rešavaju redom dok traje rok (`BYSE_MAX_OK`, podrazumevano sve);
+      svaki strim u imenu nosi sajt sa kog je došao (`Byse 720p · filmoton.ba`);
+      isti link sa dva sajta (isti fajl) prikazuje se jednom;
+    - byse master playlist se proverava pre vraćanja — CDN ponekad obriše fajl, a API ga i dalje navodi;
     - vrući krug PoW-a je ručno razvijen (bez poziva funkcija i alokacija po
       pokušaju): ~5× brže u V8, isto rešenje kao referentni `byseHash` —
       proverava `node test/pow.cjs`.
