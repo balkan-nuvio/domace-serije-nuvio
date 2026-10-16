@@ -235,7 +235,13 @@ Provereno u `NuvioTV/app/src/full/.../PluginRuntime.kt`:
     - jeftini serveri se rešavaju prvi (paralelno), byse posle, jedan po jedan;
     - byse PoW se prekida posle `BUDGET_MS` (45 s od početka `getStreams`) —
       bez toga ceo plugin probije limit od 60 s i Nuvio ne prikaže **ništa**;
-    - težina iznad `BYSE_MAX_DIFFICULTY` (18) se ne pokušava uopšte.
+    - težina iznad `BYSE_MAX_DIFFICULTY` (18) se ne pokušava uopšte;
+    - posle prve uspešne byse kopije ostale se preskaču (`BYSE_MAX_OK` = 1);
+    - vrući krug PoW-a je ručno razvijen (bez poziva funkcija i alokacija po
+      pokušaju): ~5× brže u V8, isto rešenje kao referentni `byseHash` —
+      proverava `node test/pow.cjs`.
+    Poznati nerešivi hostovi (`ds.rpmhub.site`, `player.abyssplayer.com`,
+    `player.filmoland.com`) se ne otvaraju uopšte.
 13. Strimovi koji traže `Referer` (`dsplayer`) vraćaju `headers` — Nuvio to mapira
     u `behaviorHints.proxyHeaders.request`.
 

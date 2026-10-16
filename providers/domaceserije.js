@@ -51,6 +51,11 @@ var SHOW_STREAMTAPE = _settings.showStreamtape !== false;
 var BUDGET_MS = Number(_settings.budgetMs) || 45000;
 // Najveća byse PoW težina (bita) koja se uopšte pokušava
 var BYSE_MAX_DIFFICULTY = Number(_settings.byseMaxDifficulty) || 18;
+// Koliko uspešnih byse kopija tražiti (svaka je jedan PoW)
+var BYSE_MAX_OK = Number(_settings.byseMaxOk) || 1;
+// Hostovi za koje znamo da se ne mogu rešiti — ne otvaraju se uopšte
+// (rpmhub: "Video not found", abyss: service-worker chunk protokol, filmoland: NXDOMAIN)
+var DEAD_HOSTS = { 'ds.rpmhub.site': 1, 'player.abyssplayer.com': 1, 'player.filmoland.com': 1 };
 
 var UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -1497,11 +1502,83 @@ function byseSolvePow(nonce, difficulty, maxTries) {
     return null;
   }
   var cap = maxTries || 4000000;
+  // > 32 bita (nikad viđeno) traži više izlaznih reči — spori referentni put
+  if (diff > 32) {
+    for (var t = 0; t < cap; t++) {
+      if ((t & 2047) === 0 && _byseDeadline && Date.now() > _byseDeadline) return null;
+      if (byseLeadingZeroBits(byseHash(byseAscii(prefix + t))) >= diff) return String(t);
+    }
+    return null;
+  }
+
+  // Isti heš kao byseHash, ali ručno razvijen za vrući krug: stanje u lokalnim
+  // promenljivama umesto Uint32Array, runda inline (QuickJS skupo plaća svaki
+  // poziv funkcije), bafer se ne alocira po pokušaju, a staje se posle prve
+  // izlazne reči (difficulty <= 32 gleda samo nju). Proverava ga test/pow.cjs.
+  var pre = byseAscii(prefix);
+  var L = pre.length;
+  var msg = new Uint8Array(L + 16);
+  msg.set(pre);
+  var r = new Int32Array(BYSE_BE);
+  var e0, e1, e2, e3, i, j, a, c, d, n, ds, acc;
+
   for (var s = 0; s < cap; s++) {
     // PoW je sinhron; bez ove provere jedan težak nonce (difficulty 20 ≈ 1M
     // heševa) pojede ceo budžet plugina
     if ((s & 2047) === 0 && _byseDeadline && Date.now() > _byseDeadline) return null;
-    if (byseLeadingZeroBits(byseHash(byseAscii(prefix + s))) >= diff) return String(s);
+
+    ds = String(s);
+    n = L + ds.length;
+    for (j = 0; j < ds.length; j++) msg[L + j] = ds.charCodeAt(j);
+
+    e0 = 1779033703; e1 = -1150833019; e2 = 1013904242; e3 = -1521486534;
+    for (i = 0; i < n; i++) {
+      e0 = (e0 + msg[i]) | 0; e0 = (e0 << 7) | (e0 >>> 25);
+      e0 = (e0 + e1) | 0; e3 ^= e0; e3 = (e3 << 16) | (e3 >>> 16);
+      e2 = (e2 + e3) | 0; e1 ^= e2; e1 = (e1 << 12) | (e1 >>> 20);
+      e0 = (e0 + e1) | 0; e3 ^= e0; e3 = (e3 << 8) | (e3 >>> 24);
+      e2 = (e2 + e3) | 0; e1 ^= e2; e1 = (e1 << 7) | (e1 >>> 25);
+    }
+    for (i = 0; i < 8; i++) {
+      e0 = (e0 + e1) | 0; e3 ^= e0; e3 = (e3 << 16) | (e3 >>> 16);
+      e2 = (e2 + e3) | 0; e1 ^= e2; e1 = (e1 << 12) | (e1 >>> 20);
+      e0 = (e0 + e1) | 0; e3 ^= e0; e3 = (e3 << 8) | (e3 >>> 24);
+      e2 = (e2 + e3) | 0; e1 ^= e2; e1 = (e1 << 7) | (e1 >>> 25);
+    }
+    for (i = 0; i < BYSE_BE; i++) {
+      e0 = (e0 + e1) | 0; e3 ^= e0; e3 = (e3 << 16) | (e3 >>> 16);
+      e2 = (e2 + e3) | 0; e1 ^= e2; e1 = (e1 << 12) | (e1 >>> 20);
+      e0 = (e0 + e1) | 0; e3 ^= e0; e3 = (e3 << 8) | (e3 >>> 24);
+      e2 = (e2 + e3) | 0; e1 ^= e2; e1 = (e1 << 7) | (e1 >>> 25);
+      r[i] = e0 ^ e2;
+    }
+    for (j = 0; j < BYSE_DR; j++) {
+      for (i = 0; i < BYSE_BE; i++) {
+        a = r[i] & BYSE_LT;
+        c = (r[i] + r[a]) | 0;
+        c = (c << 13) | (c >>> 19);
+        c ^= Math.imul(r[(i + 1) & BYSE_LT], BYSE_LR);
+        r[i] = c;
+        e0 ^= c;
+        e0 = (e0 + e1) | 0; e3 ^= e0; e3 = (e3 << 16) | (e3 >>> 16);
+        e2 = (e2 + e3) | 0; e1 ^= e2; e1 = (e1 << 12) | (e1 >>> 20);
+        e0 = (e0 + e1) | 0; e3 ^= e0; e3 = (e3 << 8) | (e3 >>> 24);
+        e2 = (e2 + e3) | 0; e1 ^= e2; e1 = (e1 << 7) | (e1 >>> 25);
+      }
+    }
+    // prva izlazna reč (n[0] u byseHash)
+    e0 = (e0 + e1) | 0; e3 ^= e0; e3 = (e3 << 16) | (e3 >>> 16);
+    e2 = (e2 + e3) | 0; e1 ^= e2; e1 = (e1 << 12) | (e1 >>> 20);
+    e0 = (e0 + e1) | 0; e3 ^= e0; e3 = (e3 << 8) | (e3 >>> 24);
+    e2 = (e2 + e3) | 0; e1 ^= e2; e1 = (e1 << 7) | (e1 >>> 25);
+    acc = e0;
+    for (i = 0; i < BYSE_BE / 8; i++) {
+      d = r[i];
+      acc = (acc + d) | 0;
+      acc = (acc << 5) | (acc >>> 27);
+      acc ^= Math.imul(d, BYSE_HR);
+    }
+    if (Math.clz32(acc ^ e2) >= diff) return String(s);
   }
   return null;
 }
@@ -2141,6 +2218,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       var srv = perSite[p][q];
       if (seenServer[srv.url]) continue;
       seenServer[srv.url] = 1;
+      if (DEAD_HOSTS[hostOf(srv.url)] && !INCLUDE_UNRESOLVED) continue;
       ordered.push(srv);
       (BYSE_HOST_RE.test(hostOf(srv.url)) ? byse : cheap).push(srv);
     }
@@ -2161,13 +2239,17 @@ async function getStreams(tmdbId, mediaType, season, episode) {
   var done = {};
   var cheapDone = await Promise.all(cheap.map(settle));
   for (var cd = 0; cd < cheapDone.length; cd++) done[cheapDone[cd].server.url] = cheapDone[cd];
+  // Druga byse kopija iste epizode je samo rezerva, a košta još jedan PoW
+  // (na uređaju sekunde do desetine sekundi) — staje se posle prve uspešne.
   _byseDeadline = started + BUDGET_MS;
-  for (var b = 0; b < byse.length; b++) {
+  var byseOk = 0;
+  for (var b = 0; b < byse.length && byseOk < BYSE_MAX_OK; b++) {
     if (Date.now() > _byseDeadline) {
       warn('budžet istekao, preskačem ' + (byse.length - b) + ' byse server(a)');
       break;
     }
     done[byse[b].url] = await settle(byse[b]);
+    if (done[byse[b].url].resolved.length) byseOk++;
   }
   _byseDeadline = 0;
 
