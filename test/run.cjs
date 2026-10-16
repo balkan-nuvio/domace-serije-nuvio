@@ -87,7 +87,7 @@ const episode = args[3] != null ? Number(args[3]) : mediaType === 'tv' ? 1 : nul
   streams.forEach((s, i) => {
     console.log(`[${i + 1}] ${s.name}${s.quality ? '  (' + s.quality + ')' : ''}`);
     console.log(`    title   : ${s.title}`);
-    console.log(`    url     : ${String(s.url).slice(0, 150)}`);
+    console.log(`    url     : ${process.env.DS_FULL_URL ? s.url : String(s.url).slice(0, 150)}`);
     if (s.subtitles && s.subtitles.length) {
       console.log(`    titlovi : ${s.subtitles.length}`);
     }

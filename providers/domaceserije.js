@@ -1822,18 +1822,38 @@ async function resolveBysebuho(embedUrl) {
   }
   if (!cfg || !cfg.sources) return [];
 
-  var out = [];
+  // byse API i dalje navodi videe čije je fajlove CDN obrisao (sve putanje i
+  // poster -> 404, npr. Blok 27 S01E05/06); takav link u plejeru samo večno
+  // "bufferuje". Zato se master playlist proveri pre vraćanja (~0,1 s).
+  var checks = [];
   for (var i = 0; i < cfg.sources.length; i++) {
     var s = cfg.sources[i];
     if (!s || typeof s.url !== 'string' || !s.url) continue;
-    out.push({
-      url: s.url,
-      kind: /\.m3u8(\?|$)/i.test(s.url) ? 'hls' : 'mp4',
-      server: s.label ? 'Byse ' + s.label : 'Byse',
-      quality: s.label || ''
-    });
+    checks.push(byseCheckSource(s));
   }
+  var out = [];
+  var done = await Promise.all(checks);
+  for (var k = 0; k < done.length; k++) if (done[k]) out.push(done[k]);
+  if (!out.length && checks.length) warn('byse ' + code + ': CDN nema fajl (404), preskačem');
   return out;
+}
+
+async function byseCheckSource(s) {
+  var hls = /\.m3u8(\?|$)/i.test(s.url);
+  if (hls) {
+    try {
+      var r = await httpGet(s.url);
+      if (r.status !== 200 || str(r.text).indexOf('#EXTM3U') !== 0) return null;
+    } catch (e) {
+      return null;
+    }
+  }
+  return {
+    url: s.url,
+    kind: hls ? 'hls' : 'mp4',
+    server: s.label ? 'Byse ' + s.label : 'Byse',
+    quality: s.label || ''
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 {
   "name": "Domaće Serije",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Strimovi za domaće serije, filmove i crtane (sinhronizovane i titlovane) sa domaceserije.online / .net, exyuteka.net, balkanteka.net, samodomace.net, filmoton.ba i gledajcrtace.net. Bez naloga, bez servera — sve se izvršava na uređaju.",
   "author": "lokalno",
   "scrapers": [
@@ -8,7 +8,7 @@
       "id": "domaceserije",
       "name": "Domaće Serije",
       "description": "Domaće serije i filmovi, crtane serije i filmovi, latino i serije sa prevodom",
-      "version": "1.3.2",
+      "version": "1.3.3",
       "filename": "providers/domaceserije.js",
       "supportedTypes": [
         "movie",
